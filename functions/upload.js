@@ -3,6 +3,16 @@ import { errorHandling, telemetryData } from "./utils/middleware";
 export async function onRequestPost(context) {
     const { request, env } = context;
 
+    if (!env.TG_Chat_ID || !env.TG_Bot_Token) {
+        return new Response(
+            JSON.stringify({ error: 'Missing Telegram Configuration: TG_Chat_ID or TG_Bot_Token is not set.' }),
+            {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            }
+        );
+    }
+
     try {
         const clonedRequest = request.clone();
         const formData = await clonedRequest.formData();
@@ -21,6 +31,7 @@ export async function onRequestPost(context) {
         const telegramFormData = new FormData();
         telegramFormData.append("chat_id", env.TG_Chat_ID);
 
+        // 📦 [标记: 资源处理] 根据文件类型准备上传数据
         // 根据文件类型选择合适的上传方式
         let apiEndpoint;
         if (uploadFile.type.startsWith('image/')) {
@@ -37,6 +48,7 @@ export async function onRequestPost(context) {
             apiEndpoint = 'sendDocument';
         }
 
+        // 🚀 [标记: 资源上传] 调用 Telegram API 上传文件
         const result = await sendToTelegram(telegramFormData, apiEndpoint, env);
 
         if (!result.success) {
@@ -63,6 +75,29 @@ export async function onRequestPost(context) {
             });
         }
 
+        // 💾 [标记: 外部 API 登记] 将图片信息同步到外部数据库
+        if (env.API_BASE_URL) {
+            try {
+                const apiData = {
+                    img_name: fileName,
+                    img_url: `/file/${fileId}.${fileExtension}`,
+                    img_desc: "From Telegraph-Image",
+                    img_type: fileExtension,
+                    img_size: uploadFile.size
+                };
+
+                await fetch(`${env.API_BASE_URL}/api/imgresource`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(apiData)
+                });
+            } catch (apiError) {
+                console.error('External API registration failed:', apiError);
+                // 即使登记失败，也不干扰主流程返回，避免上传变慢或失败感官
+            }
+        }
+
+        // ✅ [标记: 成功返回值] 上传成功后的响应，返回图片的相对路径
         return new Response(
             JSON.stringify([{ 'src': `/file/${fileId}.${fileExtension}` }]),
             {
