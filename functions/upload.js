@@ -2,6 +2,8 @@ import { errorHandling, telemetryData } from "./utils/middleware";
 
 export async function onRequestPost(context) {
     const { request, env } = context;
+    // console.log("Current ENV keys:", Object.keys(env));
+
 
     if (!env.TG_Chat_ID || !env.TG_Bot_Token) {
         return new Response(
@@ -76,7 +78,10 @@ export async function onRequestPost(context) {
         }
 
         // 💾 [标记: 外部 API 登记] 将图片信息同步到外部数据库
-        if (env.API_BASE_URL) {
+        let apiLog = { status: 'skipped', details: null, env_keys: Object.keys(env) };
+        const apiBaseUrl = env.API_BASE_URL || "https://azhangliang.iepose.cn";
+
+        if (apiBaseUrl) {
             try {
                 const apiData = {
                     img_name: fileName,
@@ -86,27 +91,43 @@ export async function onRequestPost(context) {
                     img_size: uploadFile.size
                 };
 
-                await fetch(`${env.API_BASE_URL}/api/imgresource`, {
+                const apiResponse = await fetch(`${apiBaseUrl}/api/imgresource`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(apiData)
                 });
+
+                const apiResult = await apiResponse.json();
+                apiLog = {
+                    ...apiLog,
+                    status: apiResponse.ok ? 'success' : 'failed',
+                    statusCode: apiResponse.status,
+                    response: apiResult
+                };
             } catch (apiError) {
-                console.error('External API registration failed:', apiError);
-                // 即使登记失败，也不干扰主流程返回，避免上传变慢或失败感官
+                // console.error('External API registration failed:', apiError);
+                apiLog = {
+                    ...apiLog,
+                    status: 'error',
+                    message: apiError.message
+                };
             }
         }
 
         // ✅ [标记: 成功返回值] 上传成功后的响应，返回图片的相对路径
+        // 调试信息已加入返回值，您可以通过浏览器 Network 面板查看 Response
         return new Response(
-            JSON.stringify([{ 'src': `/file/${fileId}.${fileExtension}` }]),
+            JSON.stringify([{
+                'src': `/file/${fileId}.${fileExtension}`,
+                'api_log': apiLog
+            }]),
             {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' }
             }
         );
     } catch (error) {
-        console.error('Upload error:', error);
+        // console.error('Upload error:', error);
         return new Response(
             JSON.stringify({ error: error.message }),
             {
@@ -147,7 +168,7 @@ async function sendToTelegram(formData, apiEndpoint, env, retryCount = 0) {
 
         // 图片上传失败时转为文档方式重试
         if (retryCount < MAX_RETRIES && apiEndpoint === 'sendPhoto') {
-            console.log('Retrying image as document...');
+            // console.log('Retrying image as document...');
             const newFormData = new FormData();
             newFormData.append('chat_id', formData.get('chat_id'));
             newFormData.append('document', formData.get('photo'));
@@ -159,7 +180,7 @@ async function sendToTelegram(formData, apiEndpoint, env, retryCount = 0) {
             error: responseData.description || 'Upload to Telegram failed'
         };
     } catch (error) {
-        console.error('Network error:', error);
+        // console.error('Network error:', error);
         if (retryCount < MAX_RETRIES) {
             await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
             return await sendToTelegram(formData, apiEndpoint, env, retryCount + 1);
