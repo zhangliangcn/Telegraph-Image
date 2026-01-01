@@ -114,12 +114,13 @@ export async function onRequestPost(context) {
             }
         }
 
-        // ✅ [标记: 成功返回值] 上传成功后的响应，返回图片的相对路径
+        // ✅ [标记: 成功返回值] 上传成功后的响应，返回图片的相对路径 1ad
         // 调试信息已加入返回值，您可以通过浏览器 Network 面板查看 Response
         return new Response(
             JSON.stringify([{
                 'src': `/file/${fileId}.${fileExtension}`,
                 'api_log': apiLog
+
             }]),
             {
                 status: 200,
