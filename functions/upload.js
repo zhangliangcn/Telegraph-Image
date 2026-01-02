@@ -27,8 +27,13 @@ export async function onRequestPost(context) {
             throw new Error('No file uploaded');
         }
 
-        const fileName = uploadFile.name;
-        const fileExtension = fileName.split('.').pop().toLowerCase();
+        // 小程序上传时可能没有 name 属性，或者默认为 "file"
+        let fileName = uploadFile.name || `wx_upload_${Date.now()}`;
+        if (fileName === "file") {
+            fileName = `wx_upload_${Date.now()}`;
+        }
+
+        const fileExtension = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : 'jpg';
 
         const telegramFormData = new FormData();
         telegramFormData.append("chat_id", env.TG_Chat_ID);
@@ -84,11 +89,11 @@ export async function onRequestPost(context) {
         if (apiBaseUrl) {
             try {
                 const apiData = {
-                    img_name: fileName,
+                    img_name: fileName || "Untitled",
                     img_url: `/file/${fileId}.${fileExtension}`,
-                    img_desc: "From Telegraph-Image",
-                    img_type: fileExtension,
-                    img_size: uploadFile.size
+                    img_desc: "From Telegraph-Image (MiniProgram)",
+                    img_type: fileExtension || "unknown",
+                    img_size: uploadFile.size || 0
                 };
 
                 const apiResponse = await fetch(`${apiBaseUrl}/api/imgresource`, {
